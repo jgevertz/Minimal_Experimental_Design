@@ -30,12 +30,11 @@ Tmax = 30;
 [tDose,cDose,ti] = set_protocol(intvl,ivdose,dosenum,Tmax);
 
 %% read in data from profile likelihood curves
-load fit_profiles.mat
+load ../fit_profiles.mat
 num_params = length(best_fit_params);
 num_fit = num_params-1;
 threshold_fval = chi2inv(0.95,num_fit)/2 + best_fit;
-path = 'One_TimePt_All/Output/';
-fname = [path 'profiles_sample_one_pt.mat'];
+fname = 'profiles_sample_one_pt.mat';
 load(fname);
 
 %% Read in data for % TO in TME
@@ -148,7 +147,7 @@ for t = 1:7:length(t_day)-1 % Makes one plot per week
     xlabel('Time (days)','FontSize',14)
     ylabel('Percent target occupancy in TME','FontSize',14)
     title('Predicted %TO in TME trajectories','FontSize',14);
-    fname_fig2 = [path 'predictionsAll_withinCI_day' num2str(t_day(t+1))];
+    fname_fig2 = ['predictionsAll_withinCI_day' num2str(t_day(t+1))];
     saveas(gcf,[fname_fig2,'.fig']);
     saveas(gcf,[fname_fig2,'.png']);
     
@@ -184,13 +183,13 @@ for t = 1:7:length(t_day)-1 % Makes one plot per week
     xlabel('Time (days)','FontSize',14)
     ylabel('Percent target occupancy in TME','FontSize',14)
     title('Predicted range for %TO in TME trajectory','FontSize',14);
-    fname_fig3 = [path 'predictionRange_withinCI_day' num2str(t_day(t+1))];
+    fname_fig3 = ['predictionRange_withinCI_day' num2str(t_day(t+1))];
     saveas(gcf,[fname_fig3,'.fig']);
     saveas(gcf,[fname_fig3,'.png']);
     count_time = count_time+1; 
 end
 
-fname_out = [path 'predictions_across_params.mat'];
+fname_out = 'predictions_across_params.mat';
 save(fname_out,'params_to_test','time_tested_params','tumor','TO_tme');
 toc
 
