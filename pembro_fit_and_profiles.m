@@ -179,7 +179,7 @@ end
 
 toc;
 diary off;
-save fit_profiles_bounds.mat best_fit_params konT_domain ksynt_domain ...
+save fit_profiles.mat best_fit_params konT_domain ksynt_domain ...
     best_fit params profiles param_fit
 
 
