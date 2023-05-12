@@ -2,7 +2,7 @@
 %                                                                       %
 % Compare model output (TGI) across parameter sets within 95%           %
 % confidence interval for all 1-day experimental protocols              %
-% Author: Jana Gevertz. Last revision: 5/12/2023                        %
+% Author: Jana Gevertz. Last revision: 2/27/2023                        %
 % - Reads in output and solves model at each parameterization           %
 % - Compares predicted % TO in TME as a function of time across         %
 %   parameterizations                                                   %
