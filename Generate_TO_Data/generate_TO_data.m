@@ -1,0 +1,353 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                       %
+% Create simulated data target occupany in tumor microenvironment       %
+% Author: Jana Gevertz and Irina Kareva. Updated: 2/24/23               %
+% - Uses new pembro model with all model parameters fixed except konT   %
+%   and ksynt. These are two important parameters that influence        %
+%   the % TO in tme data                                                %
+% - Assume konT is normally distributed with mean = 0.01 (default value %
+%   in model calibrated to TGI data) and sigma = mean/5                 %
+% -	Assume ksynt is normally distributed with mean = 14190 (default     %
+%   value in model calibrated to TGI data) and sigma = mean/20          %
+% - Create N = 10 perfect samples of target occupancy data, with data   %
+%   collected every day                                                 %
+% - Data is output to TO_data.mat to be read in elsewhere               %
+%                                                                       %    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+clearvars; clc; close all;
+rng('default') % for reproducibility 
+
+%% Read in data, set ICs and set baseline parameters
+[time_d, conc_ug_ml_1mpk, time_d_10mpk, conc_ug_ml_10mpk, ...
+    raw_data_plasma_plasma_mg_L, raw_TME_RO, time_days_TGI, ...
+    vol_mm3_control, vol_mm3_2mpk, vol_mm3_10mpk] = read_data(); 
+[p, ICs] = set_parameters_ICs(); 
+
+%% Set protocol and dosing
+dose_flat = 10; % in mg/kg
+dose      = dose_flat*10^6/p.MW; % mg/kg, convert to ng/ml
+intvl     = 3.5; % days
+dosenum   = 5;
+T = 61; % end time for solving ODEs
+ivdose=dose/p.V1; %if needs conversion
+[tDose,cDose,ti] = set_protocol(intvl,ivdose,dosenum,T);
+
+%% Generate Ndata samplings of (konT, ksynt)
+Ndata = 10; 
+params_mean = [0.006 14190.00]; % konT = prob*kon, ksynt
+%params_mean = [0.011344167848865 9401.28];
+%params_mean = [0.011344167848865 13000.5];
+params_TME = zeros(Ndata,length(params_mean));
+params_stdev = zeros(1,length(params_mean));
+for j = 1:length(params_mean)
+    if j == 1
+        params_stdev(j) = params_mean(j)/5; 
+    else
+        params_stdev(j) = params_mean(j)/20; 
+    end
+    params_TME(:,j) = normrnd(params_mean(j),params_stdev(j),[Ndata,1]);
+end
+params_TME
+
+%% Visualize model predictions at mean values for sanity
+sol = solve_model(tDose,cDose,ICs,params_mean,T,p);    
+% Combine output from each dose
+Time = []; x1 = []; Dp = []; DR = []; Tr = [];
+Ttme = []; Dtme = []; DRtme = []; Dt = [];
+for j = 1:size(sol,2)
+    Time = [Time sol{j}.x];
+    x1 = [x1 sol{j}.y(5,:)]; 
+    
+    %Div = [Div sol{j}.y(1,:)]; 
+    Dp = [Dp sol{j}.y(2,:)]; 
+    DR = [DR sol{j}.y(3,:)]; 
+    Tr = [Tr sol{j}.y(4,:)]; 
+    
+    Ttme = [Ttme sol{j}.y(9,:)]; 
+    Dtme = [Dtme sol{j}.y(10,:)]; 
+    DRtme = [DRtme sol{j}.y(11,:)]; 
+    Dt = [Dt sol{j}.y(12,:)]; 
+end
+TOc   = 100*DR./(DR+Tr); % TO in central compartment
+TOtme = 100*DRtme./(DRtme+Ttme); % TO in the TME
+Dp_mg=Dp*150/1000; %convert to units from data to mg/L
+
+figure;
+set(gcf, 'Units', 'Normalized','OuterPosition', [0.05, 0.05, 0.65, 0.95]);
+subplot(2,3,1)
+semilogy(Time,Dp*150,Time,Dtme*150,Time,Dt*150) % converting from nM to ug/ml, which was the reported data
+legend('Drug in plasma','Drug in TME','Drug in Peripheral',...
+    'FontSize',14,'Location','SouthEast')
+xlabel('Time (d)','FontSize',14)
+ylabel('Conc. (ng/ml)','FontSize',14)
+xlim([0,T+1])
+
+subplot(2,3,2)
+plot(Time,Tr,Time,Ttme)
+legend('Free target plasma','Free target TME','FontSize',14,'Location','NorthEast')
+xlabel('Time (d)','FontSize',14)
+ylabel('Target conc (nM)','FontSize',14)
+xlim([0,T+1])
+
+subplot(2,3,3)
+plot(Time,DR,Time,DRtme)
+legend('In plasma','In TME','FontSize',14,'Location','NorthEast')
+xlabel('Time (d)','FontSize',14)
+ylabel('Drug-target complex ','FontSize',14)
+xlim([0,T+1])
+
+subplot(2,3,4)
+plot(Time,TOc,Time,TOtme)
+legend('Target occupancy plasma','Target occupancy TME','FontSize',14)
+xlabel('Time (d)','FontSize',14)
+ylabel('Target occupancy','FontSize',14)
+xlim([0,T+1])
+
+subplot(2,3,5)
+plot(time_days_TGI,vol_mm3_10mpk,'*k','MarkerSize',10);
+hold on
+plot(Time,x1,'--','LineWidth',2);
+hold off;
+xlabel('Time (d)','FontSize',14)
+ylabel('Tumor volume (mm^3)','FontSize',14)
+legend('Data','Model','Location','NorthWest','FontSize',14);
+title('Best Fit to Pembro Data','FontSize',16);
+xlim([0,T+1]) 
+
+% subplot(2,3,6)
+% plot(Time,Dt,'LineWidth',2);
+% xlim([0,T+1]) 
+% xlabel('Time (d)','FontSize',14)
+% ylabel('D_t: drug in peripheral','FontSize',14)
+
+
+%% Generate simulated %TO in TME data at each sampled parameter set (konT,ksynt)
+TO_tme_halfdays = zeros(Ndata,2*T+1); 
+for i = 1:Ndata
+    % Solve model at specified parameter set
+    fprintf('Solving model for parameter set number %d\n',i); 
+    sol = solve_model(tDose,cDose,ICs,params_TME(i,:),T,p);
+    % Evaluate output from each dose at desired day and then combine
+    t_halfday = []; Ttme = []; Dtme = []; DRtme = []; 
+    for j = 1:length(ti)-1
+        if j == 1
+            t_halfday = [t_halfday ti(j):0.5:ti(j+1)];
+            Ttme  = [Ttme deval(sol{j}, ti(j):0.5:ti(j+1), 9)]; 
+            Dtme  = [Dtme deval(sol{j}, ti(j):0.5:ti(j+1), 10)]; 
+            DRtme = [DRtme deval(sol{j}, ti(j):0.5:ti(j+1), 11)]; 
+        else % don't double count repeated days
+            t_halfday = [t_halfday ti(j)+0.5:0.5:ti(j+1)];
+            Ttme  = [Ttme deval(sol{j}, ti(j)+0.5:0.5:ti(j+1), 9)]; 
+            Dtme  = [Dtme deval(sol{j}, ti(j)+0.5:0.5:ti(j+1), 10)]; 
+            DRtme = [DRtme deval(sol{j}, ti(j)+0.5:0.5:ti(j+1), 11)]; 
+        end
+    end
+    TO_tme_halfdays(i,:) = 100*DRtme./(DRtme+Ttme); % TO in the TME
+end
+% Extract data at each day (as compared to every half day)
+t_day = t_halfday(1:2:end);
+TO_tme = TO_tme_halfdays(:,1:2:end);
+
+%% Statistics of %TO in TME data at each day
+TO_tme_avg = mean(TO_tme);
+TO_tme_std = std(TO_tme);
+
+%% Visualize individual %TO in TME trajectories (left) and average (right)
+figure;
+set(gca,'fontsize', 14) 
+set(gcf, 'Units', 'Normalized','OuterPosition', [0.05, 0.05, 0.65, 0.65]);
+sgtitle(['Parameters Normally Distributed with \mu(k_o_n_T) = ' ...
+    num2str(params_mean(1)) ', \sigma(k_o_n_T) = ' ...
+    num2str(params_stdev(1)), ' and \mu(k_s_y_n_t) = ' num2str(params_mean(2)) ...
+    ', \sigma(k_s_y_n_t) = ' num2str(params_stdev(2))],'FontSize',15,...
+    'FontWeight','Bold');
+
+subplot(1,2,1)
+plot(t_day,TO_tme,'.-');
+xlabel('Time (days)','FontSize',16)
+ylabel('%TO in TME','FontSize',16)
+title('Individual Trajectories','FontSize',16)
+xlim([0,T+1])
+
+subplot(1,2,2)
+errorbar(t_day,TO_tme_avg,TO_tme_std,'.-');
+xlabel('Time (days)','FontSize',16)
+ylabel('%TO in TME','FontSize',16)
+title('Average Trajectory with STD Error Bars','FontSize',16)
+xlim([0,T+1])
+
+fname_fig = 'TO_sim_data';
+saveas(gcf,[fname_fig,'.fig']);
+saveas(gcf,[fname_fig,'.png']);
+
+save TO_sim_data.mat t_day TO_tme params_mean params_stdev params_TME 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%% Functions %%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+function [time_d, conc_ug_ml_1mpk, time_d_10mpk, conc_ug_ml_10mpk, ...
+    raw_data_plasma_plasma_mg_L, raw_TME_RO, time_days_TGI, ...
+    vol_mm3_control, vol_mm3_2mpk, vol_mm3_10mpk] = read_data()
+    %% PK data: just to get a visual
+    time_d            =  [0.000802773	0.013147279	0.023592631	0.025	0.299919666	0.69494388	1.727134555	3.403138733	4.56447194	6.496862026	6.633601177	6.389559776	6.408551325	6.680130472	7.339137214	7.482523407	9.024637166	9.162325895	9.169922514	11.35584978	11.23335429	12.91030804	13.05274466	13.33951704	13.35850859	13.62154154	15.81506543	16.09329162	16.85865103	17.75505213	18.03042959	19.3095104];
+    conc_ug_ml_1mpk   =  [15.72690153	13.80115848	12.1716836	10.54030956	9.064666224	7.440888804	6.419143481	4.962491691	3.794511442	2.341657962	21.01035039	19.08080904	16.11812743	13.75178046	10.94672871	8.578482575	8.008736112	6.529294464	5.344221821	4.339568892	3.448865255	1.844079385	19.62396733	14.88747507	11.92479347	10.89165321	8.701927642	5.298642104	5.902573355	6.064001519	3.105118222	3.568512012];
+
+    time_d_10mpk      =  [	0	0.12738835	0.12738835	0.12738835	0.38216542	0.891719561	1.019108096	3.057324656	3.057324656	4.585987076	6.751592172	6.878980707	6.751592172	6.751592172	6.751592172	7.006369242	7.515923382	9.171974338	9.299362873	9.426751408	11.2101909	11.2101909	12.86624185	13.37579599	13.24840746	13.37579599	13.63057306	13.50318453	13.7579616	14.01273867	14.01273867	14.01273867	15.92356669	15.92356669	15.92356669	17.70700618	17.96178325	17.96178325	19.23566861 19.61783421	19.74522275	];
+    conc_ug_ml_10mpk  =  [135.9955872	121.3313351	114.7953874	91.91957038	83.83289622	72.56150868	57.89725657	53.66137963	43.85745806	52.52695558	30.35885267	190.5312019	159.44382	141.4699638	128.3980684	97.4355772	82.89621581	70.36551351	62.23720911	57.37687856	41.61983265	35.08388493	45.42899963	262.915782	230.1944132	202.4582657	176.3977353	160.0162358	153.5635486	130.770992	116.0651097	98.09125349	64.4019816	51.33008617	44.79413846	51.91290954	40.55826152	35.65630074	34.43861621 60.70729778	52.57899338	];
+
+    raw_data_plasma_plasma_mg_L = [0.120858857	0.128113512	0.139820104	0.168984979	0.171465684	0.173982805	0.179128445	0.184426271	0.192668238	0.558258627	0.609270466	0.636498623	0.636498623	0.694659776	0.736357319	0.758135504	0.780557792	0.889953035	1.029575567	1.156887528	1.482129242	1.739828053	1.871336544	2.012785376	2.397434968	2.733435691	2.773562614	2.855592302	3.027001654	4.232356855	4.35753121	4.486407667	4.486407667	4.552268276	5.832070763	6.004557564	6.092704661	7.048574036	7.152047329	7.58135504	8.643882621	10.60025849	10.91376715	10.91376715	10.91376715	10.91376715	13.58036343	13.98201038	14.82129242	15.48365257	17.14656836	17.65368784	17.65368784	21.64925909	25.41343037	25.78650034	26.16504699	28.14278602	30.71438135	39.34927263	39.92692121	39.92692121	39.92692121	47.55708096	51.15178099	55.01819384	62.72899858	63.64986229	63.64986229];
+    raw_TME_RO                  = [33.88083296	8.870995257	14.48292333	3.713080169	48.78137546	11.90896994	12.77332333	14.06894356	27.22531191	5.728388322	27.94408998	25.14358502	30.10315375	47.35928668	32.69985329	38.73940883	17.1778862	29.90844678	34.01458028	29.27792373	60.99150432	61.00151262	61.00606185	44.40683749	51.5336586	51.32621379	33.42954951	28.47180047	36.45387651	41.65000512	26.34185176	46.18194639	52.21968224	39.92948696	78.97460393	55.04111365	36.28191568	69.28292788	64.324269	54.19313749	18.40617785	48.17632809	72.11345775	64.56628794	45.80618013	40.63097797	69.32387094	82.91059629	43.45331923	49.06251777	50.57832065	62.2243452	54.46154196	41.10500756	62.67835818	58.15096614	60.52384364	71.52569745	76.27509184	48.47384762	51.06235855	35.53675208	25.61761461	60.34551389	32.10208468	45.26027273	59.06900042	63.38257873	45.26937118];
+
+    
+    %% TGI: H1299 strain
+    time_days_TGI = [0	3	7	10	14	17	21	25];
+    vol_mm3_control = [57.17217621	62.84941329	170.8501862	259.8335477	355.0138932	694.0222425	1077.648878	1833.067907	];	
+    vol_mm3_2mpk=[	57.18550306	69.27295383	81.12052135	93.18131843	175.5412366	309.3960939	596.8828503	1416.404017	];
+    vol_mm3_10mpk=[	57.18550306	43.64542589	49.04279917	41.9129357	47.33696268	104.2559288	128.9239237	243.3215835	];   
+end
+
+function [p, ICs] = set_parameters_ICs()
+    %% Define variables and set initial conditions
+    % 1 = Div0 (?), 2 = Dp0 (drug in plasma), 3 = DR0 (drug-target), 
+    % 4 = Tr0 (target in central), 5 = x10 (growing tumor), 6 = x20 (stage 1 tumor death), 
+    % 7 = x30 (stage 2 tumor death), 8 = x40 (stage 3 tumor death), 9 = Ttme0 (target in TME), 
+    % 10 = Dtme0 (free drug in TME), 11 = DRtme0 (drug-target complex in TME), 
+    % 12 = Dt0 (drug in peirpheral compartment)
+    numVar = 12;
+    ICs = zeros(1,numVar);
+    p.Tr0 = 10; 
+    ICs(4) = p.Tr0; 
+    ICs(5) = 38; % *****fit
+    ICs(9) = 4.3*p.Tr0; % Ttme0
+    p.Ttme0 = ICs(9);
+    
+    %% For unit conversions
+    p.MW_L = 150e3; % molecular weight for conversions
+    p.MW   = p.MW_L/1000;% convert to ml
+    
+    %% PK parameters
+    p.k01 = 0;
+    p.V1  = 70; % (6/7)* mL/kg
+    p.V2  = 33; % mL/kg
+    p.Cl1 = 5; %0.25*20; % ***** ml/kg/h: CHANGED to get slower decay in plasma
+    p.Cl2 = 22; % ml/kg/h
+    p.k10 = p.Cl1/p.V1;
+    p.k12 = p.Cl2/p.V1;
+    p.k21 = p.Cl2/p.V2;
+    p.KD   = .027; % pembro KD is 27 pM, or 0.027 nM    
+    p.kon  = 0.005; % ***** 0.001; CHANGED made larger to get drug into TME much quicker 
+    p.koff = p.KD*p.kon;
+    p.k1t   = 0.3; % 1
+    p.kt1   = 0.3; % 1
+    p.delta = 0.0001; %very small
+    p.scale_decay = 0.5; % ***** CHANGED FROM 0
+        
+    %% TME parameters
+    p.prob = 2; % *****fit
+    p.kint = 4.4; % *****fit
+    p.scale_ksynt = 75; % *****fit
+    p.ksynt=p.scale_ksynt*ICs(9)*p.kint; %target synthesis in TME
+    p.kintP = p.kint; % assuming they are equal
+    p.ksyn= ICs(4)*p.kintP; % target synthesis in plasma
+    p.Kx = 500; %  ***** new parameter for saturating ksynt term
+    p.K = 10000; 
+    p.lam3 = 0.148542; % *****fit
+    p.k1 = 100; % not used
+    p.ic50 = 43;
+    p.k2 = 0.38; % *****fit
+end
+
+
+function [tDose,cDose,ti] = set_protocol(intvl,ivdose,dosenum,T)
+    tDose = zeros(1,dosenum); cDose = zeros(1,dosenum);
+    for i=1:dosenum
+        tDose(i)=intvl*(i-1);
+        cDose(i)=ivdose;
+    end
+    ti = [tDose max(T)];
+end
+
+function sol_all = solve_model(tDose,cDose,ICs,params_to_fit,T,p) 
+    ti = [tDose max(T)];
+    options_DE=odeset('RelTol',1.0e-5);
+    tPoints = []; cPoints = []; 
+    Dp0 = ICs(2);
+    for i = 1:length(tDose)
+        %fprintf('\tSolving model for dose %d\n',i);
+        if i == 1
+            ICs(2) = ICs(2) + cDose(i);
+        else
+            Dp0 = Dp0 + cDose(i);
+            ICs = [Div0 Dp0 DR0 Tr0 x10 x20 x30 x40 Ttme0 Dtme0 DRtme0 Dt0]; 
+        end
+        tSpan = [ti(i) ti(i+1)];
+        sol_all{i} = ode23s(@(t,x) pembro(t,x,params_to_fit,p),tSpan,ICs,options_DE);
+        Div0 = sol_all{i}.y(1,end); Dp0 = sol_all{i}.y(2,end); DR0 = sol_all{i}.y(3,end);...
+            Tr0 = sol_all{i}.y(4,end); x10 = sol_all{i}.y(5,end); x20 = sol_all{i}.y(6,end);...
+            x30 = sol_all{i}.y(7,end); x40 = sol_all{i}.y(8,end); Ttme0 = sol_all{i}.y(9,end);...
+            Dtme0 = sol_all{i}.y(10,end); DRtme0 = sol_all{i}.y(11,end); Dt0 = sol_all{i}.y(12,end);
+    end
+end
+
+function dy=pembro(t,x,params_to_fit,p)
+    konT = params_to_fit(1);
+    ksynt_scaled = params_to_fit(2);
+    % which changes some other parameters if we want to guarantee 
+    % amount of target in plasma and tumor = initial amount in absence of
+    % drug
+    Tpp0 = 10; 
+    Ttme0 = 4.3*Tpp0; 
+    p.kint = (ksynt_scaled/p.scale_ksynt)/Ttme0;
+   
+%         fprintf('scale_ksynt = %f, ksynt = %f, kint = %f, konT = %f\n',...
+%             p.scale_ksynt,ksynt_scaled,p.kint,konT);
+
+    Div=x(1);  
+    Dp=x(2);  
+    DR=x(3);
+    Tpp=x(4);
+    x1=x(5);
+    x2=x(6);
+    x3=x(7);
+    x4=x(8);
+    Ttme=x(9); %target in TME
+    Dtme=x(10); %free drug in TME
+    DRtme=x(11); %drug-target complex in TME
+    Dt=x(12);
+    wt=x1+x2+x3+x4;
+    TOtme=100*DRtme./(DRtme+Ttme);
+    
+    %%%equations
+    dDiv  = -p.k01*Div;
+    %central compartment
+    dDp=p.k01*Div-p.k10*Dp-p.kon*Dp*Tpp+p.koff*DR... % drug in plasma
+        -p.k12*Dp+p.k21*(p.V2/p.V1)*Dt...%turnover and on-off in plasma
+        -p.k1t*Dp+p.kt1*(wt+p.delta)*Dtme/p.V1; %%%% NEW PIECE, with which we replaced "-TumDisp*wt/p.V1" 
+    dDR    = p.kon*Dp*Tpp-p.koff*DR-p.kintP*DR; % drug-target complex in plasma
+    dTpp   = p.ksyn-p.kintP*Tpp-p.kon*Dp*Tpp+p.koff*DR; %target in plasma
+    dDt    = p.k12*(p.V1/p.V2)*Dp-p.k21*Dt - p.scale_decay*p.k10*Dt; %drug in peripheral: add decay term
+
+    %TME
+    dDtme= p.k1t*p.V1*Dp/(wt+p.delta)-p.kt1*Dtme...%%%% NEW PIECE, with which we replaced "-TumDisp*wt/p.V1" 
+        -konT*Dtme*Ttme+p.koff*DRtme - p.scale_decay*p.k10*Dtme; %drug in TME
+    %% synthesis proportional to tumor volume
+    %dTtme  = p.ksynt*(wt/x10) -p.kint*Ttme-p.prob*p.kon*Dtme*Ttme+p.koff*DRtme; %target in TME
+    %% synthesis increases with tumor volume, but plateaus: 
+    %% still analyze ksynt (synthesis*max rate) and konT = prob*kon (apparent affinity)
+    %% possible third parameter: pk2 (related to max kill rate)
+    dTtme  = ksynt_scaled*wt/(wt+p.Kx) -p.kint*Ttme-konT*Dtme*Ttme+p.koff*DRtme; %target in TME
+    dDRtme = konT*Dtme*Ttme-p.koff*DRtme-p.kint*DRtme; % drug-target complex in TME
+    %tum_growth = p.lamda0*x1/((1.0+(p.lamda0/p.lamda1*wt)^p.psi)^(1.0/p.psi));
+    tum_growth = p.lam3*x1*(1-wt/p.K);
+    kill_term  = p.k2*TOtme*x1/(p.ic50+TOtme); % max kill rate = k2>lam3 so that, at dose  = 10, we can get some shrinkage
+    dx1 = tum_growth - kill_term;
+    dx2 = 0*kill_term - p.k1*x2;
+    dx3 = p.k1*(x2 -x3);
+    dx4 = p.k1*(x3 -x4);
+
+    dy=[dDiv;dDp;dDR;dTpp;dx1;dx2;dx3;dx4;dTtme;dDtme;dDRtme;dDt];
+end
+
