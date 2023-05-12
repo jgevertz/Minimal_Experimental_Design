@@ -1,6 +1,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                       %
-% 12/20/22: Statistics of profile likelihood on randomly sampled data   %
+% Calculating statistics of profile likelihood results across           %
+% experimental protocols                                                %
+% Author: Jana Gevertz. Last Update: 12/22/2022                         %
 % - Uses the output from profile_sample_N_timePts_parallel.m, which     %
 %   gives the profile likelihood curve when the data is sampled at      %
 %   size_sample number of time points Nsamples times.                   %
@@ -19,16 +21,14 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clearvars; close all; clc;
-%% Comment if not running directly after running OV_profile_likelihood_randomSampling.m
-load ../Generate_TO_Data/TO_sim_data.mat
+load Generate_TO_Data/TO_sim_data.mat
 TO_tme_avg = mean(TO_tme);
 TO_tme_std = std(TO_tme);
-load ../fit_profiles.mat
+load fit_profiles.mat
 params_allData = params;
 clear params; 
-path = 'All_2Pts/' ;
-%path = 'Sample_3Pts/' ;
-%path = 'All_Domain_3Pts/';
+path = 'Two_Day_Protocol/' ;
+%path = 'Three_Day_Protocols_Subset/' ;
 fname = [path 'profiles_sample_Npts.mat'];
 load(fname);
 tf = length(t_day)
