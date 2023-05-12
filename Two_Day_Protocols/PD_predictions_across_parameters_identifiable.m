@@ -32,18 +32,17 @@ Tmax = 30;
 [tDose,cDose,ti] = set_protocol(intvl,ivdose,dosenum,Tmax);
 
 %% read in data from profile likelihood curves
-load fit_profiles.mat
+load ../fit_profiles.mat
 num_params = length(best_fit_params);
 num_fit = num_params-1;
 threshold_fval = chi2inv(0.95,num_fit)/2 + best_fit;
-path = 'Randomly_Sample_Npts/All_2Pts/';
-fname = [path 'profiles_sample_Npts.mat'];
-fname2 = [path 'analyze_sampling.mat'];
+fname = 'profiles_sample_Npts.mat';
+fname2 = 'analyze_sampling.mat';
 load(fname);
 load(fname2);
 
 %% Read in data for % TO in TME
-load Generate_TO_Data/TO_sim_data.mat % simulated data of % TO in tme
+load ../Generate_TO_Data/TO_sim_data.mat % simulated data of % TO in tme
 t_day_all = t_day; 
 TO_tme_all = TO_tme;
 clear t_day TO_tme;
@@ -159,7 +158,7 @@ for t = 1:1:size(t_sample,1) % loop through every protocol
         xlabel('Time (days)','FontSize',14)
         ylabel('Percent target occupancy in TME','FontSize',14)
         title('Predicted %TO in TME trajectories','FontSize',14);
-        fname_fig2 = [path 'predictionsAll_withinCI_days' ...
+        fname_fig2 = ['predictionsAll_withinCI_days' ...
             num2str(t_sample(t,1)) '_' num2str(t_sample(t,2))];
         saveas(gcf,[fname_fig2,'.fig']);
         saveas(gcf,[fname_fig2,'.png']);
@@ -197,7 +196,7 @@ for t = 1:1:size(t_sample,1) % loop through every protocol
         xlabel('Time (days)','FontSize',14)
         ylabel('Percent target occupancy in TME','FontSize',14)
         title('Predicted range for %TO in TME trajectory','FontSize',14);
-        fname_fig3 = [path 'predictionRange_withinCI_days' ...
+        fname_fig3 = ['predictionRange_withinCI_days' ...
             num2str(t_sample(t,1)) '_' num2str(t_sample(t,2))];
         saveas(gcf,[fname_fig3,'.fig']);
         saveas(gcf,[fname_fig3,'.png']);
@@ -205,7 +204,7 @@ for t = 1:1:size(t_sample,1) % loop through every protocol
     end
 end
 
-fname_out = [path 'predictions_across_params_identifiable_2days.mat'];
+fname_out = 'predictions_across_params_identifiable_2days.mat';
 save(fname_out,'params_to_test','time_tested_params','tumor','TO_tme');
 toc
 
