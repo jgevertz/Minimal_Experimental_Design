@@ -25,7 +25,7 @@ clearvars; clc; %close all;
 load ../fit_profiles.mat
 params_allData = params;
 clear params; 
-load Output/profiles_sample_one_pt.mat
+load profiles_sample_one_pt.mat
 konT_domain = params(1,:);
 ksynt_domain = params(2,:);
 Nsamples_all = Nsamples;
