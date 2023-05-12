@@ -2,9 +2,13 @@
 %                                                                       %
 % Create simulated data target occupany in tumor microenvironment       %
 % Author: Jana Gevertz and Irina Kareva. Updated: 2/24/23               %
-% - Uses new pembro model with all model parameters fixed except konT   %
-%   and ksynt. These are two important parameters that influence        %
-%   the % TO in tme data                                                %
+% - Pembro model accounts for distribution in plasma, peripheral and    %
+%   TME. Parameters have been calibrated to PK and %TO in TME data from %
+%   Lindauer et al (2017) paper,, and TGI data on Keytruda              %
+%   (https://www.ema.europa.eu/en/documents/assessment-report/...       %
+%   keytruda-epar-public-assessment-report_en.pdf)                      %
+% - All model parameters fixed except konT and ksynt. These are two     %
+%   important parameters that influence the % TO in TME data            %
 % - Assume konT is normally distributed with mean = 0.01 (default value %
 %   in model calibrated to TGI data) and sigma = mean/5                 %
 % -	Assume ksynt is normally distributed with mean = 14190 (default     %
@@ -35,9 +39,7 @@ ivdose=dose/p.V1; %if needs conversion
 
 %% Generate Ndata samplings of (konT, ksynt)
 Ndata = 10; 
-params_mean = [0.006 14190.00]; % konT = prob*kon, ksynt
-%params_mean = [0.011344167848865 9401.28];
-%params_mean = [0.011344167848865 13000.5];
+params_mean = [0.01 14190.00]; % konT = prob*kon, ksynt
 params_TME = zeros(Ndata,length(params_mean));
 params_stdev = zeros(1,length(params_mean));
 for j = 1:length(params_mean)
@@ -115,12 +117,6 @@ legend('Data','Model','Location','NorthWest','FontSize',14);
 title('Best Fit to Pembro Data','FontSize',16);
 xlim([0,T+1]) 
 
-% subplot(2,3,6)
-% plot(Time,Dt,'LineWidth',2);
-% xlim([0,T+1]) 
-% xlabel('Time (d)','FontSize',14)
-% ylabel('D_t: drug in peripheral','FontSize',14)
-
 
 %% Generate simulated %TO in TME data at each sampled parameter set (konT,ksynt)
 TO_tme_halfdays = zeros(Ndata,2*T+1); 
@@ -186,8 +182,6 @@ save TO_sim_data.mat t_day TO_tme params_mean params_stdev params_TME
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%% Functions %%%%%%%%% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
 function [time_d, conc_ug_ml_1mpk, time_d_10mpk, conc_ug_ml_10mpk, ...
     raw_data_plasma_plasma_mg_L, raw_TME_RO, time_days_TGI, ...
     vol_mm3_control, vol_mm3_2mpk, vol_mm3_10mpk] = read_data()
